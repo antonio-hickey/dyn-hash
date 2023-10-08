@@ -71,8 +71,28 @@ fn parse_dyn_hash_file_path(path: &str) -> Option<DynHashFile> {
                 prefix: parts[1].to_string(),
                 hash: hash_and_ext[0].to_string(),
                 ext: hash_and_ext[1].to_string(),
+                web_route: format!("#[get(\"{}\")]", &filename),
+                filename: filename.to_string(),
             })
         }
     }
     None
+}
+
+/// Check if route already exists
+pub fn has_route_yet(source_code: &str, prefix: &str, ext: &str) -> bool {
+    // Extract & format static code chunks
+    let route_prefix = format!("#[get(\"{}-", prefix);
+    let route_ext = format!(".{}\")]", ext);
+
+    // Loop over all the lines
+    for line in source_code.lines() {
+        // Check if line is declaring route macro 
+        if line.contains(&route_prefix) && line.contains(&route_ext) {
+            return true
+        }
+    }
+
+    // Didn't find the route macro declaration
+    false
 }

@@ -22,6 +22,9 @@ fn main() -> Result<(), error::DynHashError> {
     // into seperate utils.rs to clean up the main function.
     let dyn_hash_files = utils::collect_hash_files(&build_dir)?;
 
+    // The projects error name, if found will be set to some string
+    let mut error_name: Option<String> = None;
+
     // Read the current web routes file content by line
     let updated_web_routes = if let Ok(lines) = utils::read_web_routes_by_line(&cwd) {
         // Create a new mutable string to collect our updated web routes file
@@ -30,11 +33,23 @@ fn main() -> Result<(), error::DynHashError> {
         for line_result in lines {
             // if line, then define a mutable variable for line
             if let Ok(mut line) = line_result {
+
+                // If we haven't already found the error name 
+                // then check if line is the error import
+                if error_name.is_none() && line.contains("use crate::error::") {
+                    // Collect the error name
+                    error_name = Some(
+                        line
+                            .replace("use crate::error::", "")
+                            .replace(";", "")
+                    );
+                }
+
                 for dhf in dyn_hash_files.iter() {
-                    // Extract dynamic values
+                    // Extract & format values
                     let prefix = format!("{}-", dhf.prefix);
                     let ext = format!(".{}", dhf.ext);
-    
+
                     // Check if this line should be updated or not
                     // by seeing if we find the prefix and ext and 
                     // getting the index of where the prefix starts.
@@ -59,8 +74,39 @@ fn main() -> Result<(), error::DynHashError> {
     };
 
     // Convert the string to bytes to write to file
-    let updated_web_routes_data = updated_web_routes
+    let mut updated_web_routes_data = updated_web_routes
         .expect("updated_web_routes not to be None?");
+
+    // Extract error name or panic out
+    let proj_error_name = error_name.expect("Project error name was not found");
+
+    // Create web hash routes if not already present
+    for dhf in dyn_hash_files.iter() {
+        if !utils::has_route_yet(&updated_web_routes_data, &dhf.prefix, &dhf.ext) {
+            // Create 2 new lines
+            updated_web_routes_data.push_str("\n");
+
+            // Create the Actix web route macro
+            updated_web_routes_data.push_str(&dhf.web_route);
+            updated_web_routes_data.push_str("\n");
+
+            // Create the function "definition"
+            let function_def_code = format!(
+                "pub async fn get_{}_{}() -> Result<NamedFile, {}> {{\n", 
+                &dhf.prefix, 
+                &dhf.ext, 
+                &proj_error_name
+            );
+            updated_web_routes_data.push_str(&function_def_code);
+
+            // Create the response with file content
+            let response_code = format!("    Ok(NamedFile::open(\"src/web/dist/assets/{}\").unwrap())\n", &dhf.filename);
+            updated_web_routes_data.push_str(&response_code);
+
+            // Create the close function notation
+            updated_web_routes_data.push_str("}\n")
+        }
+    }
 
     // Write the updated web routes file
     let mut web_routes_file = File::create(cwd.join("../routes/web.rs"))?;
